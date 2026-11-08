@@ -59,6 +59,20 @@ Boş bir muhasebe oturumunda beklenen iki kayıt şunlardır.
 
 Aynı görevin ikinci çalıştırmasında iki mevcut eşleşme ve sıfır yeni taslak beklenir. LegacyApp kapatıldığında oturum verileri silinir.
 
+## Demo ekranları
+
+### ComputerAgent konsolu
+
+![ComputerAgent konsolunda Görev istemine girilen örnek sipariş aktarımı görevi](assets/rizakaya-ai-local-use-agent.png)
+
+### WebPortal sipariş yönetimi
+
+![WebPortal’da Onaylandı filtresiyle listelenen dört sipariş ve alt tutar alanı](assets/rizakaya-ai-local-use-agent-webportal.png)
+
+### LegacyApp fatura listesi
+
+![LegacyApp’te Taslak durumunda kaydedilen SIP-1003 ve SIP-1004 faturaları](assets/rizakaya-ai-local-use-agent-desktop.png)
+
 ## Kabul kontrolleri
 
 - Portalda sipariş numarası ve müşteriyle aramayı deneyin. **Onaylandı** filtresi dört sipariş göstermeli. **Tutarın üzerinde (TL)** alanına `10000` girildiğinde iki sipariş kalmalı.
