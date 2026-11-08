@@ -1,0 +1,97 @@
+@page
+@model WebPortal.Pages.IndexModel
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>WebPortal | Sipariş Yönetimi</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { margin: 0; background: #f3f6fb; color: #17263b; font: clamp(20px, 1.05vw, 30px) "Segoe UI", sans-serif; }
+        main { max-width: 1520px; margin: auto; padding: 36px 28px; }
+        .brand { color: #275998; font-weight: 650; }
+        h1 { margin: 8px 0 24px; font-size: 40px; }
+        form, section { background: #fff; padding: 20px; border: 1px solid #cdd9e8; border-radius: 10px; }
+        form { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; }
+        label { display: grid; gap: 6px; font-weight: 600; }
+        label { flex: 1; min-width: 260px; }
+        .minimum { flex: 0 1 320px; }
+        .error { color: #9c2c25; }
+        input, button { min-height: 49px; padding: 8px 14px; border: 1px solid #879cb5; border-radius: 5px; font: inherit; }
+        input { width: 100%; min-width: 0; }
+        button { background: #164b8b; color: #fff; font-weight: 600; }
+        .statuses { flex-basis: 100%; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+        .statuses button { background: #fff; color: #164b8b; }
+        .statuses button[aria-pressed="true"] { background: #164b8b; color: #fff; }
+        :focus-visible { outline: 3px solid #3476ca; outline-offset: 2px; }
+        section { margin-top: 20px; overflow: auto; }
+        h2 { margin: 0 0 14px; font-size: 24px; }
+        .applied { margin: 0 0 14px; color: #275998; font-weight: 600; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 10px 14px; border-bottom: 1px solid #dbe4f0; white-space: nowrap; }
+        th { background: #e8eff8; }
+        tbody tr:nth-child(even) { background: #f7f9fc; }
+        .amount { text-align: right; font-variant-numeric: tabular-nums; }
+    </style>
+</head>
+<body>
+    <main>
+        <div class="brand">WebPortal · Demo</div>
+        <h1>Sipariş Yönetimi</h1>
+        <form method="get" action="/">
+            <label>
+                Sipariş no veya müşteri
+                <input name="q" value="@Model.Query" maxlength="120" autocomplete="off">
+            </label>
+            <label class="minimum">
+                Tutarın üzerinde (TL)
+                <input name="min" value="@Model.Minimum" maxlength="22" inputmode="decimal" autocomplete="off" autofocus>
+            </label>
+            <button type="submit" name="status" value="@Model.Status">Ara</button>
+            <div class="statuses" role="group" aria-label="Durum filtresi">
+                <span>Durum filtresi</span>
+                <button type="submit" name="status" value="" aria-pressed="@(Model.Status.Length == 0 ? "true" : "false")">Tümü</button>
+                @foreach (var status in WebPortal.Pages.IndexModel.Statuses)
+                {
+                    <button type="submit" name="status" value="@status" aria-pressed="@(Model.Status == status ? "true" : "false")">@status</button>
+                }
+            </div>
+        </form>
+        <section>
+            <h2>Siparişler · @Model.Results.Count kayıt</h2>
+            <p class="applied">
+                Uygulanan filtreler · Durum @(Model.Status.Length == 0 ? "Tümü" : Model.Status) ·
+                Alt tutar @(Model.AppliedMinimum is decimal minimum ? WebPortal.Pages.IndexModel.FormatAmount(minimum) : "Yok")
+            </p>
+            @if (Model.FilterError is not null)
+            {
+                <p class="error" role="alert">@Model.FilterError</p>
+            }
+            else if (Model.Results.Count == 0)
+            {
+                <p>Aramaya uygun sipariş bulunamadı.</p>
+            }
+            else
+            {
+                <table>
+                    <thead>
+                        <tr><th>Sipariş no</th><th>Müşteri</th><th class="amount">Tutar</th><th>Durum</th></tr>
+                    </thead>
+                    <tbody>
+                    @foreach (var order in Model.Results)
+                    {
+                        <tr>
+                            <td>@order.Number</td>
+                            <td>@order.Customer</td>
+                            <td class="amount">@WebPortal.Pages.IndexModel.FormatAmount(order.Amount)</td>
+                            <td>@order.Status</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </section>
+    </main>
+</body>
+</html>

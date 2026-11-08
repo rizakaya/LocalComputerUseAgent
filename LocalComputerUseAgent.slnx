@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="ComputerAgent/ComputerAgent.csproj" />
+  <Project Path="LegacyApp/LegacyApp.csproj" />
+  <Project Path="WebPortal/WebPortal.csproj" />
+</Solution>
