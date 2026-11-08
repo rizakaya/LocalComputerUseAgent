@@ -7,4 +7,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
   </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\LegacyApp\LegacyApp.csproj" ReferenceOutputAssembly="false" Private="false" />
+  </ItemGroup>
 </Project>

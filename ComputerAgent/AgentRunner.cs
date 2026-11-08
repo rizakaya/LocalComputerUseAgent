@@ -16,7 +16,10 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
         deadline.CancelAfter(RunLimit);
         var token = deadline.Token;
         var windowNotes = new Dictionary<string, string>(StringComparer.Ordinal);
+        var initialRows = new Dictionary<string, TableRecord[]>(StringComparer.Ordinal);
         var initialObservations = new Dictionary<string, string>(StringComparer.Ordinal);
+        TableRecord[] expectedRecords = [];
+        TransferProgress? progress = null;
         string note = "";
         string observation = "";
         string previousAction = "none";
@@ -34,6 +37,21 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
             {
                 await Task.Delay(300, token);
                 var frame = await screen.CaptureAsync(expectedWindow, token);
+                var reading = await WithFocusAsync(frame, ct => ollama.ReadScreenAsync(frame, ct), token);
+                controller.EnsureFrameCurrent(frame);
+                observation = reading.Observation;
+                var visibleRows = reading.ReadRows();
+                initialRows.TryAdd(frame.Window.Name, visibleRows);
+                initialObservations.TryAdd(frame.Window.Name, observation);
+                progress = expectedRecords.Length == 0 ? null
+                    : TransferProgress.Compare(expectedRecords, initialRows[frame.Window.Name], visibleRows);
+                if (progress is { Missing.Length: 0 })
+                {
+                    Console.WriteLine($"[{turn:00}/{MaxTurns}] {frame.Window.Name} · finish");
+                    Console.WriteLine();
+                    Console.WriteLine(progress.Report());
+                    return;
+                }
 
                 string otherWindowNotes = string.Join('\n', windowNotes
                     .Where(entry => entry.Key != frame.Window.Name)
@@ -41,9 +59,8 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
                 unchangedFrames = previousFrame?.Window == frame.Window
                     && frame.Png.AsSpan().SequenceEqual(previousFrame.Png) ? unchangedFrames + 1 : 0;
                 string? blockedAction = unchangedFrames >= 2 ? previousKind : null;
-                var (decision, currentObservation) = await DecideWithFocusAsync(activeGoal, frame,
-                    otherWindowNotes, initialObservations.GetValueOrDefault(frame.Window.Name),
-                    previousAction, previousKind, blockedAction, token);
+                var decision = await WithFocusAsync(frame, ct => ollama.DecideAsync(activeGoal, frame, reading,
+                    otherWindowNotes, initialObservations[frame.Window.Name], progress, previousAction, previousKind, blockedAction, ct), token);
                 if (decision.Action == blockedAction || previousKind == "type_text" && decision.Action == "type_text")
                 {
                     throw new InvalidOperationException("Modelden farklı bir eylem bekleniyordu.");
@@ -51,8 +68,6 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
                 token.ThrowIfCancellationRequested();
                 controller.EnsureFrameCurrent(frame);
                 note = decision.Note;
-                observation = currentObservation;
-                initialObservations.TryAdd(frame.Window.Name, observation);
                 windowNotes[frame.Window.Name] = note;
 
                 string action = decision.Action switch
@@ -66,10 +81,17 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
                 if (decision.Action == "finish")
                 {
                     Console.WriteLine();
-                    Console.WriteLine(decision.Report);
+                    Console.WriteLine(progress?.Report() ?? decision.Report);
                     return;
                 }
 
+                if (decision.Goal is not null)
+                {
+                    var records = await WithFocusAsync(frame,
+                        ct => ollama.SelectTransferRecordsAsync(decision.Goal, note, reading, ct), token);
+                    expectedRecords = TransferProgress.BindToSource(records, visibleRows);
+                    progress = expectedRecords.Length == 0 ? null : TransferProgress.Compare(expectedRecords, [], []);
+                }
                 await controller.ApplyAsync(frame, decision, token);
                 expectedWindow = decision.Target ?? expectedWindow;
                 activeGoal = decision.Goal ?? activeGoal;
@@ -77,30 +99,27 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
                 previousKind = decision.Action;
                 previousFrame = frame;
             }
-            ReportStop($"{MaxTurns} model turu sınırına ulaşıldı.", observation, note);
+            ReportStop($"{MaxTurns} eylem turu sınırına ulaşıldı.", observation, note, progress);
         }
         catch (OperationCanceledException)
         {
             string reason = cancellationToken.IsCancellationRequested ? "Kullanıcı iptal etti."
                 : deadline.IsCancellationRequested ? "10 dakikalık çalışma süresi doldu."
                 : "Ollama yanıt süresini aştı.";
-            ReportStop(reason, observation, note);
+            ReportStop(reason, observation, note, progress);
         }
         catch (Exception error) when (error is HttpRequestException or JsonException or InvalidOperationException
             or ExternalException)
         {
-            ReportStop(error.Message, observation, note);
+            ReportStop(error.Message, observation, note, progress);
         }
     }
 
-    private async Task<(AgentDecision Decision, string Observation)> DecideWithFocusAsync(
-        string task, ScreenFrame frame, string otherWindowNotes, string? initialObservation, string previousAction,
-        string previousKind, string? blockedAction,
-        CancellationToken cancellationToken)
+    private async Task<T> WithFocusAsync<T>(
+        ScreenFrame frame, Func<CancellationToken, Task<T>> request, CancellationToken cancellationToken)
     {
         using var inference = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        var pending = ollama.DecideAsync(task, frame, otherWindowNotes, initialObservation, previousAction,
-            previousKind, blockedAction, inference.Token);
+        var pending = request(inference.Token);
         try
         {
             while (await Task.WhenAny(pending, Task.Delay(100, inference.Token)) != pending)
@@ -119,7 +138,7 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
         }
     }
 
-    private static void ReportStop(string reason, string observation, string note)
+    private static void ReportStop(string reason, string observation, string note, TransferProgress? progress)
     {
         Console.WriteLine();
         Console.WriteLine($"Çalıştırma durdu. {reason}");
@@ -127,6 +146,10 @@ internal sealed class AgentRunner(ComputerController controller, OllamaClient ol
         if (note.Length > 0)
         {
             Console.WriteLine($"Son çalışma notu\n{note}");
+        }
+        if (progress is not null)
+        {
+            Console.WriteLine(progress.Report());
         }
     }
 }

@@ -12,6 +12,12 @@ Windows üzerinde çalışan yerel bir bilgisayar kullanımı demosu. Qwen3-VL, 
 
 Windows’ta açık bir masaüstü oturumu, .NET 10 SDK, Microsoft Edge ve Ollama gerekir. Çözüm, .NET SDK ve Windows API’leriyle derlenir.
 
+### Visual Studio
+
+Ollama çalışırken `LocalComputerUseAgent.slnx` çözümünü açın, araç çubuğundan **Demo** başlatma profilini seçin ve F5'e basın. Açılan **ComputerAgent** konsolundaki `Görev>` satırına örnek görevi yapıştırıp Enter'a basın. Profil WebPortal'ı ve agent'ı başlatır. Agent ilk görevi alınca LegacyApp'i ve Edge'i açar.
+
+### PowerShell
+
 1. Ollama çalışıyorsa model listesini kontrol edin. Gerekirse ayrı bir terminalde `ollama serve` ile başlatın.
 
    ```powershell
@@ -23,16 +29,16 @@ Windows’ta açık bir masaüstü oturumu, .NET 10 SDK, Microsoft Edge ve Ollam
 
    ```powershell
    dotnet build LocalComputerUseAgent.slnx
-   dotnet run --no-build --project WebPortal
+   dotnet run --no-build --no-launch-profile --project WebPortal
    ```
 
 3. İkinci terminalde, yine proje kökünden agent’ı başlatın.
 
    ```powershell
-   .\ComputerAgent\bin\Debug\net10.0-windows\ComputerAgent.exe --legacy-exe .\LegacyApp\bin\Debug\net10.0-windows\LegacyApp.exe
+   dotnet run --no-build --project ComputerAgent
    ```
 
-   `--model` ile Ollama’da yüklü başka bir yerel görsel model seçilebilir. İlk görevle birlikte agent LegacyApp’i ve ayrı bir demo profiliyle Edge kiosk penceresini açar. Çalışma sırasında odak değişirse agent durur. Raporu görmek için çalışma bittikten sonra konsola dönün. İkinci görev aynı pencereleri ve mevcut taslakları kullanır. Konsola `çıkış` yazmak demo pencerelerini kapatır.
+   Agent aynı derleme yapılandırmasındaki LegacyApp'i bulur. Özel bir çıktı yolu kullanıyorsanız `--legacy-exe` ile exe yolunu, başka bir yerel görsel model kullanıyorsanız `--model` ile model etiketini verin. İlk görevle birlikte agent LegacyApp’i ve ayrı bir demo profiliyle Edge kiosk penceresini açar. Çalışma sırasında odak değişirse agent durur. Raporu görmek için çalışma bittikten sonra konsola dönün. İkinci görev aynı pencereleri ve mevcut taslakları kullanır. Konsola `çıkış` yazmak demo pencerelerini kapatır.
 
 ## Örnek görev
 

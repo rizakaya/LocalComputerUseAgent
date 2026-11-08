@@ -4,11 +4,20 @@ using ComputerAgent;
 
 Console.InputEncoding = Encoding.UTF8;
 Console.OutputEncoding = Encoding.UTF8;
-if (!TryReadOptions(args, out string legacyExe, out string model))
+if (!TryReadOptions(args, out string? legacyExe, out string model))
 {
-    Console.Error.WriteLine("Kullanım: ComputerAgent --legacy-exe <LegacyApp.exe yolu> [--model <Ollama etiketi>]");
+    Console.Error.WriteLine("Kullanım: ComputerAgent [--legacy-exe <LegacyApp.exe yolu>] [--model <Ollama etiketi>]");
     return 2;
 }
+
+legacyExe ??= GetDefaultLegacyExe();
+if (!string.Equals(Path.GetFileName(legacyExe), "LegacyApp.exe", StringComparison.OrdinalIgnoreCase)
+    || !File.Exists(legacyExe))
+{
+    Console.Error.WriteLine("LegacyApp.exe bulunamadı. Çözümü derleyin veya --legacy-exe ile geçerli yolu belirtin.");
+    return 2;
+}
+legacyExe = Path.GetFullPath(legacyExe);
 
 using var stop = new CancellationTokenSource();
 Console.CancelKeyPress += (_, eventArgs) =>
@@ -58,9 +67,9 @@ catch (Exception error) when (error is IOException or UnauthorizedAccessExceptio
 }
 return 0;
 
-static bool TryReadOptions(string[] args, out string legacyExe, out string model)
+static bool TryReadOptions(string[] args, out string? legacyExe, out string model)
 {
-    legacyExe = "";
+    legacyExe = null;
     model = "qwen3-vl:8b-instruct";
     for (int index = 0; index < args.Length; index += 2)
     {
@@ -80,11 +89,18 @@ static bool TryReadOptions(string[] args, out string legacyExe, out string model
                 return false;
         }
     }
-    if (!string.Equals(Path.GetFileName(legacyExe), "LegacyApp.exe", StringComparison.OrdinalIgnoreCase)
-        || !File.Exists(legacyExe))
-    {
-        return false;
-    }
-    legacyExe = Path.GetFullPath(legacyExe);
     return true;
+}
+
+static string? GetDefaultLegacyExe()
+{
+    var targetDirectory = new DirectoryInfo(AppContext.BaseDirectory);
+    var configurationDirectory = targetDirectory.Parent;
+    if (configurationDirectory?.Parent is not { Name: "bin", Parent: { Name: "ComputerAgent", Parent: { } solutionDirectory } })
+    {
+        return null;
+    }
+
+    return Path.Combine(solutionDirectory.FullName, "LegacyApp", "bin", configurationDirectory.Name,
+        targetDirectory.Name, "LegacyApp.exe");
 }

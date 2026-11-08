@@ -56,15 +56,11 @@ internal sealed class OllamaClient(string model) : IDisposable
         additionalProperties = false
     });
 
-    private static readonly JsonElement CompletionSchema = JsonSerializer.SerializeToElement(new
+    private static readonly JsonElement TransferSchema = JsonSerializer.SerializeToElement(new
     {
         type = "object",
-        properties = new
-        {
-            complete = new { type = "boolean" },
-            report = new { type = "string", maxLength = 2400 }
-        },
-        required = new[] { "complete", "report" },
+        properties = new { records = TableRecord.ListSchema },
+        required = new[] { "records" },
         additionalProperties = false
     });
 
@@ -87,37 +83,22 @@ internal sealed class OllamaClient(string model) : IDisposable
         }
     }
 
-    public async Task<(AgentDecision Decision, string Observation)> DecideAsync(
-        string task, ScreenFrame frame, string otherWindowNotes, string? initialObservation, string previousAction,
-        string previousKind, string? blockedAction,
-        CancellationToken cancellationToken)
+    public async Task<ScreenReading> ReadScreenAsync(ScreenFrame frame, CancellationToken cancellationToken)
     {
-        string image = Convert.ToBase64String(frame.Png);
         string transcript = await ChatAsync(
             """
             Transcribe this screenshot as it is now. Read the visible input values, focused input if marked,
             selected buttons, actually applied filter summary if shown, feedback message, and table rows
             (every visible row, preserving the exact spelling, IDs, amounts and decimal digits).
             Say which input values and lists are empty. Do not infer any action or goal.
-            """, image, ObservationSchema, instructions: null, cancellationToken);
+            """, frame, ObservationSchema, instructions: null, cancellationToken);
+        return ScreenReading.Parse(transcript);
+    }
 
-        using var parsed = JsonDocument.Parse(transcript);
-        string? observation = parsed.RootElement.ValueKind == JsonValueKind.Object
-            && parsed.RootElement.TryGetProperty("observation", out var property) && property.ValueKind == JsonValueKind.String
-            ? property.GetString() : null;
-        if (string.IsNullOrWhiteSpace(observation) || observation.Length > 1300
-            || observation.Any(character => char.IsControl(character) && character is not ('\r' or '\n' or '\t')))
-        {
-            throw new InvalidOperationException("Model geçerli bir ekran okuması döndürmedi.");
-        }
-
-        if (otherWindowNotes.Length > 0
-            && await CheckCompletionAsync(task, otherWindowNotes, initialObservation ?? observation, observation,
-                cancellationToken) is { } finished)
-        {
-            return (finished, observation);
-        }
-
+    public async Task<AgentDecision> DecideAsync(string task, ScreenFrame frame, ScreenReading reading,
+        string otherWindowNotes, string? initialObservation, TransferProgress? progress, string previousAction, string previousKind,
+        string? blockedAction, CancellationToken cancellationToken)
+    {
         string action = await ChatAsync(
             $"""
             Current goal from the user task: {task}
@@ -125,55 +106,41 @@ internal sealed class OllamaClient(string model) : IDisposable
             Previous action: {previousAction}
             {(blockedAction is null ? "" : $"The screen did not change after repeated actions. Choose a different action from {blockedAction}.")}
             Notes from other windows: {otherWindowNotes}
-            {(otherWindowNotes.Length == 0 ? "" : $"This window at the start of this run, before any actions: {initialObservation ?? observation}")}
-            Fresh transcription of the attached current screenshot: {observation}
+            {(otherWindowNotes.Length == 0 ? "" : $"This window at the start of this run, before any actions: {initialObservation ?? reading.Observation}")}
+            {(progress is not null && (progress.Created.Length + progress.Existing.Length + progress.Conflicts.Length > 0)
+                ? $"Only these source records are still missing. Continue with the first one: {JsonSerializer.Serialize(progress.Missing)}\n" : "")}Fresh transcription of the attached current screenshot: {reading.Observation}
             Choose the next action based on what is visible now.
-            """, image, AgentDecision.SchemaFor(previousKind, blockedAction), Instructions, cancellationToken);
-        return (AgentDecision.Parse(action), observation);
+            """, frame, AgentDecision.SchemaFor(previousKind, blockedAction), Instructions, cancellationToken);
+        return AgentDecision.Parse(action);
     }
 
-    private async Task<AgentDecision?> CheckCompletionAsync(string task, string sources, string initial,
-        string current, CancellationToken cancellationToken)
-    {
-        string result = await ChatAsync($"""
-            Verify the current window's goal using the transcribed evidence. Do not plan or perform UI actions.
-            Goal: {task}
-            Source facts read in other windows: {sources}
-            Initial screenshot before work: {initial}
-            Current screenshot: {current}
-
-            For a transfer, compare each source record against the CURRENT saved list by ID and exact values.
-            Ignore any values in the editor and never count a form as a saved record. If any requested record
-            is missing, or the evidence is insufficient, set complete to false and report to "".
-            If every source record is resolved, set complete to true. Report the exact records and classify them
-            as newly verified (absent initially), already present (present initially), or mismatched.
-            Include the counts and use the task language. Only use visible evidence in the two lists.
-            """, image: null, CompletionSchema, instructions: null, cancellationToken);
-
-        using var document = JsonDocument.Parse(result);
-        if (document.RootElement.ValueKind != JsonValueKind.Object
-            || !document.RootElement.TryGetProperty("complete", out var complete)
-            || complete.ValueKind is not (JsonValueKind.True or JsonValueKind.False)
-            || !document.RootElement.TryGetProperty("report", out var report)
-            || report.ValueKind != JsonValueKind.String)
-        {
-            throw new InvalidOperationException("Model geçerli bir sonuç doğrulaması döndürmedi.");
-        }
-        if (!complete.GetBoolean())
-        {
-            return null;
-        }
-
-        var finish = JsonSerializer.Serialize(new { action = "finish", note = "Ekrandaki sonuç listesi karşılaştırıldı.", report = report.GetString() });
-        return AgentDecision.Parse(finish);
-    }
-
-    private async Task<string> ChatAsync(string prompt, string? image, JsonElement format, string? instructions,
+    public async Task<TableRecord[]> SelectTransferRecordsAsync(string goal, string note, ScreenReading reading,
         CancellationToken cancellationToken)
     {
-        object userMessage = image is null
+        string result = await ChatAsync($"""
+            Extract the selected source records to be copied. Do not invent rows.
+            Destination goal: {goal}
+            Selected source note: {note}
+            Visible source table: {reading.Observation}
+            For each selected row, return key as the exact visible identifier and values as the exact
+            source cells that must be copied, preserving names, units and decimal digits as shown.
+            Omit status or filter cells unless the goal explicitly copies their values unchanged.
+            If the goal does not transfer table records, return an empty array.
+            """, frame: null, TransferSchema, instructions: null, cancellationToken);
+        using var document = JsonDocument.Parse(result);
+        var records = document.RootElement.ValueKind == JsonValueKind.Object
+            && document.RootElement.TryGetProperty("records", out var rows)
+            ? rows.Deserialize<TableRecord[]>(new JsonSerializerOptions(JsonSerializerDefaults.Web)) : null;
+        return TableRecord.IsValid(records) ? records!
+            : throw new InvalidOperationException("Model geçerli bir aktarım kaydı listesi döndürmedi.");
+    }
+
+    private async Task<string> ChatAsync(string prompt, ScreenFrame? frame, JsonElement format, string? instructions,
+        CancellationToken cancellationToken)
+    {
+        object userMessage = frame is null
             ? new { role = "user", content = prompt }
-            : new { role = "user", content = prompt, images = new[] { image } };
+            : new { role = "user", content = prompt, images = new[] { Convert.ToBase64String(frame.Png) } };
         object[] messages = instructions is null ? [userMessage] : [new { role = "system", content = instructions }, userMessage];
         var request = new
         {

@@ -1,0 +1,19 @@
+[
+  {
+    "Name": "Demo",
+    "Projects": [
+      {
+        "Path": "WebPortal\\WebPortal.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "ComputerAgent\\ComputerAgent.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "LegacyApp\\LegacyApp.csproj",
+        "Action": "None"
+      }
+    ]
+  }
+]
