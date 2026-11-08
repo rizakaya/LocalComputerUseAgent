@@ -2,6 +2,8 @@
 
 Windows üzerinde çalışan yerel bir bilgisayar kullanımı demosu. Qwen3-VL, WebPortal’daki siparişleri ekrandan okuyup LegacyApp’te taslak fatura oluşturur. Sonuçları yine ekrandaki fatura listesinden doğrular.
 
+<img src="assets/local-computer-use-agent.png" alt="Web portalından Windows uygulamasına sipariş aktarımını gösteren Local Computer Use Agent illüstrasyonu" width="440">
+
 | Proje | Görev |
 | --- | --- |
 | `WebPortal` | ASP.NET Core Razor Pages sipariş listesi, arama, durum ve alt tutar filtresi. Adres `http://localhost:5000`. |
